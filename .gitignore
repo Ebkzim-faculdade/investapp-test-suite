@@ -1,0 +1,8 @@
+.env
+.venv/
+.vscode/launch.json
+__pycache__/
+.pytest_cache/
+.coverage
+htmlcov/
+coverage_report/
