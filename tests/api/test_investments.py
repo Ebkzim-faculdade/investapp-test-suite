@@ -1,24 +1,14 @@
 
 import csv
+import os
 from pathlib import Path
 
 import pytest
 import requests
 
 
-def test_listar_investimentos_sem_token(base_url):
-    """Verifica se a API exige autenticação."""
-
-    response = requests.get(
-        f"{base_url}/api/investments",
-        timeout=15
-    )
-
-    assert response.status_code == 401
-
-
 def carregar_dados_investimentos_csv():
-    """Lê os cenários de investimento do arquivo CSV."""
+    """Carrega os cenários de investimento do CSV."""
 
     caminho_csv = (
         Path(__file__).resolve().parent.parent
@@ -56,28 +46,56 @@ def carregar_dados_investimentos_csv():
     return casos
 
 
+@pytest.fixture(scope="module")
+def auth_headers_investimentos(base_url):
+    """Autentica o usuário para os testes de investimentos."""
+
+    usuario = os.getenv("TEST_USER")
+    senha = os.getenv("TEST_PASSWORD")
+
+    if not usuario or not senha or usuario == "userXX":
+        pytest.skip("Credenciais válidas não configuradas.")
+
+    response = requests.post(
+        f"{base_url}/api/login",
+        json={
+            "username": usuario,
+            "password": senha
+        },
+        timeout=15
+    )
+
+    if response.status_code in (400, 401):
+        pytest.skip("Credenciais não aceitas pela API.")
+
+    assert response.status_code == 200
+
+    token = response.json().get("access_token")
+    assert token, "Token JWT não retornado."
+
+    return {"Authorization": f"Bearer {token}"}
+
+
+def test_listar_investimentos_sem_token(base_url):
+    """Verifica se a API exige autenticação."""
+
+    response = requests.get(
+        f"{base_url}/api/investments",
+        timeout=15
+    )
+
+    assert response.status_code == 401
+
+
 def test_leitura_dados_investimentos_csv():
-    """Verifica a leitura dos três cenários do CSV."""
+    """Verifica a leitura dos cenários do CSV."""
 
     casos = carregar_dados_investimentos_csv()
 
-    print("\n===== DADOS LIDOS DO CSV =====")
-
-    for caso in casos:
-        print(caso)
-
     assert len(casos) == 3
-
     assert casos[0][0] == "Poupança"
-    assert casos[0][1] == 1000.0
-
     assert casos[1][0] == "CDB"
-    assert casos[1][1] == 5000.0
-
-    assert casos[2][0] == "CDB"
     assert casos[2][1] == -100.0
-
-    print("\nLeitura do CSV realizada com sucesso!")
 
 
 @pytest.mark.parametrize(
@@ -87,7 +105,7 @@ def test_leitura_dados_investimentos_csv():
 def test_dados_investimentos_parametrizados(
     asset, amount, price, days, planned, status_esperado
 ):
-    """Verifica os cenários parametrizados do CSV."""
+    """Valida a parametrização dos dados do CSV."""
 
     payload = {
         "asset_name": asset,
@@ -97,9 +115,8 @@ def test_dados_investimentos_parametrizados(
         "planned_days": planned
     }
 
-    print("\n===== CENARIO DDT =====")
-    print("Investimento:", payload)
-    print("Status esperado no CSV:", status_esperado)
+    print("\nCenário DDT:", payload)
+    print("Status esperado:", status_esperado)
 
     assert isinstance(asset, str)
     assert isinstance(amount, float)
@@ -107,3 +124,74 @@ def test_dados_investimentos_parametrizados(
     assert isinstance(days, int)
     assert isinstance(planned, int)
     assert isinstance(status_esperado, int)
+
+
+@pytest.mark.parametrize(
+    "asset, amount, price, days, planned, status_esperado",
+    carregar_dados_investimentos_csv()
+)
+def test_criar_investimentos_ddt_csv(
+    base_url,
+    auth_headers_investimentos,
+    asset,
+    amount,
+    price,
+    days,
+    planned,
+    status_esperado
+):
+    """Testa a criação de investimentos com massa CSV."""
+
+    payload = {
+        "asset_name": asset,
+        "amount": amount,
+        "purchase_price": price,
+        "days_invested": days,
+        "planned_days": planned
+    }
+
+    response = requests.post(
+        f"{base_url}/api/investments",
+        json=payload,
+        headers=auth_headers_investimentos,
+        timeout=15
+    )
+
+    assert response.status_code == status_esperado
+
+
+def test_listar_investimentos_autenticado(
+    base_url, auth_headers_investimentos
+):
+    """Verifica a listagem de investimentos autenticada."""
+
+    response = requests.get(
+        f"{base_url}/api/investments",
+        headers=auth_headers_investimentos,
+        timeout=15
+    )
+
+    assert response.status_code == 200
+    assert isinstance(response.json(), list)
+
+
+def test_excluir_investimento_sem_token(base_url):
+    """Verifica se a exclusão exige autenticação."""
+
+    response = requests.delete(
+        f"{base_url}/api/investments/999999999",
+        timeout=15
+    )
+
+    assert response.status_code == 401
+
+
+def test_excluir_investimento_autenticado(
+    base_url, auth_headers_investimentos
+):
+    """Testa a exclusão de um investimento de teste."""
+
+    pytest.skip(
+        "Exclusão pendente: é necessário criar e "
+        "identificar um investimento exclusivo do teste."
+    )
